@@ -1,0 +1,38 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Project output
+data/output/
+output/
+
+# Local model / temp artifacts
+*.log
+tmp/
+temp/
