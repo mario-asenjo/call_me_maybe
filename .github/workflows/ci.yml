@@ -24,11 +24,11 @@ jobs:
         run: uv sync
 
       - name: Run flake8
-        run: uv run flake8 .
+        run: uv run flake8 src
 
       - name: Run mypy
         run: >
-          uv run mypy .
+          uv run mypy src
           --warn-return-any
           --warn-unused-ignores
           --ignore-missing-imports
