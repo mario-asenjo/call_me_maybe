@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator
+)
 
 
 SupportedParameterTypes = Literal["string", "number", "boolean"]
@@ -44,6 +50,7 @@ class FunctionDefinition(BaseModel):
             if not key.strip():
                 raise ValueError("Parameter names must not be empty.")
         return value
+
 
 class PromptItem(BaseModel):
     """Single natural-language prompt to process"""
