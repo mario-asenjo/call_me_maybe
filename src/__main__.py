@@ -10,6 +10,8 @@ from pathlib import Path
 
 from src.errors import ProjectError
 from src.input_loader import load_function_definitions, load_prompt_items
+from src.llm_client import LlmClient
+from src.vocab_loader import load_json_object, invert_vocab_mapping
 
 DEFAULT_INPUT_DIR: Path = Path("data/input")
 DEFAULT_OUTPUT_DIR: Path = Path("data/output")
@@ -59,12 +61,19 @@ def main() -> int:
             DEFAULT_FUNCTION_DEFINITIONS
         )
         prompt_items = load_prompt_items(args.input)
+        llm_client = LlmClient()
+        vocab_path = llm_client.get_vocab_file_path()
+        vocab_data = load_json_object(vocab_path)
+        inverted_vocab = invert_vocab_mapping(vocab_data)
 
         print(
             "Inputs loaded successfully: "
             f"{len(function_definitions)} function definitions, "
             f"{len(prompt_items)} prompts."
         )
+        print(f"Vocabulary file: {vocab_path}")
+        print(f"Vocabulary size: {len(inverted_vocab)}")
+        print(f"Prompt input file: {args.input}")
         print(f"Planned output path: {args.output}")
         return 0
     except ProjectError as exc:
