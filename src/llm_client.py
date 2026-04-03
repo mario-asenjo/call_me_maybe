@@ -4,11 +4,15 @@ Minimal adapter for real SDK.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from llm_sdk import Small_LLM_Model
+
 
 class LlmClient:
     """Public adapter for interacting with the small LLM model"""
 
-    def __init__(self, model_name: str = "Qwen/Qwen-0.6B") -> None:
+    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B") -> None:
         """
         Initialize the LLM client.
         :param model_name: Default model identifier to load.

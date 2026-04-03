@@ -5,7 +5,11 @@ description = "Function calling with constrained decoding for 42."
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.7,<3.0",
+    "llm-sdk"
 ]
+
+[tool.uv.sources]
+llm-sdk = { path = "./llm_sdk"}
 
 [dependency-groups]
 dev = [

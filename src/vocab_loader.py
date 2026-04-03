@@ -4,6 +4,9 @@ Utilities for loading and inspecting tokenizer vocabulary files
 import json
 from json import JSONDecodeError
 from pathlib import Path
+from typing import Any
+
+from src.errors import InputJsonError, InputFileError
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
