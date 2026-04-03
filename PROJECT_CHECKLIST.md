@@ -48,17 +48,17 @@
 - [x] Emitir mensajes claros y defendibles
 
 ## 4. Integración con `llm_sdk`
-- [ ] Crear `src/llm_client.py`
-- [ ] Encapsular `Small_LLM_Model`
-- [ ] Usar solo API pública del SDK
-- [ ] Cargar vocabulario vía `get_path_to_vocab_file()`
-- [ ] Exponer `encode`
-- [ ] Exponer `decode`
-- [ ] Exponer `get_logits_from_input_ids`
-- [ ] Tipar y documentar adaptador
+- [x] Crear `src/llm_client.py`
+- [x] Encapsular `Small_LLM_Model`
+- [x] Usar solo API pública del SDK
+- [x] Cargar vocabulario vía `get_path_to_vocab_file()`
+- [x] Exponer `encode`
+- [x] Exponer `decode`
+- [x] Exponer `get_logits_from_input_ids`
+- [x] Tipar y documentar adaptador
 
 ## 5. Índices de vocabulario y utilidades de tokenización
-- [ ] Crear `src/vocab_index.py`
+- [ ] Crear `src/vocab_loader.py`
 - [ ] Cargar vocabulario JSON
 - [ ] Mapear `token_id -> texto`
 - [ ] Normalizar representación de tokens si hace falta
