@@ -16,36 +16,36 @@
 - [x] Python 3.10+
 - [x] `flake8` configurado
 - [x] `mypy` configurado con los flags requeridos
-- [ ] Type hints en funciones y variables relevantes
-- [ ] Docstrings PEP 257
-- [ ] Manejo robusto de errores
-- [ ] Clases de dominio con Pydantic
-- [ ] CLI compatible con:
-  - [ ] `uv run python -m src`
-  - [ ] `uv run python -m src --input ... --output ...`
-- [ ] No usar librerías prohibidas directamente
-- [ ] No usar métodos/atributos privados de `llm_sdk`
+- [x] Type hints en funciones y variables relevantes
+- [x] Docstrings PEP 257
+- [x] Manejo robusto de errores
+- [x] Clases de dominio con Pydantic
+- [x] CLI compatible con:
+  - [x] `uv run python -m src`
+  - [x] `uv run python -m src --input ... --output ...`
+- [x] No usar librerías prohibidas directamente
+- [x] No usar métodos/atributos privados de `llm_sdk`
 
 ## 2. Modelado y validación de datos
-- [ ] Crear `src/models.py`
-- [ ] Modelar definición de parámetro
-- [ ] Modelar definición de función
-- [ ] Modelar item de prompt
-- [ ] Modelar resultado final
-- [ ] Prohibir claves extra en modelos
-- [ ] Validar tipos soportados (`string`, `number`, `boolean`)
-- [ ] Validar unicidad de nombres de función
+- [x] Crear `src/models.py`
+- [x] Modelar definición de parámetro
+- [x] Modelar definición de función
+- [x] Modelar item de prompt
+- [x] Modelar resultado final
+- [x] Prohibir claves extra en modelos
+- [x] Validar tipos soportados (`string`, `number`, `boolean`)
+- [x] Validar unicidad de nombres de función
 
 ## 3. Errores y carga de entrada
-- [ ] Crear `src/errors.py`
-- [ ] Crear `src/input_loader.py`
-- [ ] Manejar archivo inexistente
-- [ ] Manejar JSON inválido
-- [ ] Manejar estructura JSON inválida
-- [ ] Cargar funciones desde fichero
-- [ ] Cargar prompts desde fichero
-- [ ] Resolver rutas por defecto
-- [ ] Emitir mensajes claros y defendibles
+- [x] Crear `src/errors.py`
+- [x] Crear `src/input_loader.py`
+- [x] Manejar archivo inexistente
+- [x] Manejar JSON inválido
+- [x] Manejar estructura JSON inválida
+- [x] Cargar funciones desde fichero
+- [x] Cargar prompts desde fichero
+- [x] Resolver rutas por defecto
+- [x] Emitir mensajes claros y defendibles
 
 ## 4. Integración con `llm_sdk`
 - [ ] Crear `src/llm_client.py`
