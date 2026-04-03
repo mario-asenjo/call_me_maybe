@@ -29,7 +29,9 @@ def load_json_object(path: Path) -> dict[str, Any]:
         )
 
     if not isinstance(data, dict):
-        raise InputJsonError(f"Expected a JSON object in vocabulary file: {path}")
+        raise InputJsonError(
+            f"Expected a JSON object in vocabulary file: {path}"
+        )
 
     return data
 
@@ -48,7 +50,9 @@ def invert_vocab_mapping(vocab: dict[str, Any]) -> dict[int, str]:
         if not isinstance(token_id, int):
             raise InputJsonError("Vocabulary token ID must be an integer")
         if token_id in inverted:
-            raise InputJsonError(f"Duplicated token ID found in vocabulary: {token_id}")
+            raise InputJsonError(
+                f"Duplicated token ID found in vocabulary: {token_id}"
+            )
         inverted[token_id] = token_text
 
     return inverted

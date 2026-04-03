@@ -28,7 +28,11 @@ class LlmClient:
         encoded = self._model.encode(text)
         if hasattr(encoded, "tolist"):
             nested = encoded.tolist()
-            if isinstance(nested, list) and nested and isinstance(nested[0], list):
+            if (
+                    isinstance(nested, list)
+                    and nested
+                    and isinstance(nested[0], list)
+            ):
                 return [int(token_id) for token_id in nested[0]]
             return [int(token_id) for token_id in nested]
         raise TypeError("Unexpected encode() return type from llm_sdk")
@@ -47,7 +51,7 @@ class LlmClient:
         :param input_ids: Full current token sequence
         :return: Raw logits for the next token
         """
-        return self._model.get_logits_from_imput_ids(input_ids)
+        return self._model.get_logits_from_input_ids(input_ids)
 
     def get_vocab_file_path(self) -> Path:
         """
