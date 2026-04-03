@@ -74,7 +74,21 @@ def main() -> int:
         print(f"Vocabulary file: {vocab_path}")
         print(f"Vocabulary size: {len(inverted_vocab)}")
         print(f"Prompt input file: {args.input}")
-        print(f"Planned output path: {args.output}")
+        print(f"Planned output path: {args.output}\n")
+        sample_texts = [
+            '{"fn_name":"fn_add_numbers","args":{"a":2.0,"b":3.0})',
+            '"hello"',
+            '"\\\\d+"',
+            '"C:\\\\Users\\\\john\\\\config.ini"'
+        ]
+        for sample in sample_texts:
+            token_ids = llm_client.encode(sample)
+            decoded = llm_client.decode(token_ids)
+            print("-" * 60)
+            print(f"Sample: {sample}")
+            print(f"Token count: {len(token_ids)}")
+            print(f"Token IDs: {token_ids}")
+            print(f"Decoded: {decoded}")
         return 0
     except ProjectError as exc:
         print(f"Error: {exc}", file=sys.stderr)
