@@ -94,7 +94,7 @@ def main() -> int:
         print("Constraint engine dry-run for function header generation")
         test_context_text = (
             "You must output a function call as JSON with keys "
-            "'fn_name' and 'args'."
+            "'fn_name' and 'args' to greet 'Ernesto'."
         )
         test_context_token_ids = llm_client.encode(test_context_text)
         for step_index in range(64):
