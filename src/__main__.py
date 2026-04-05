@@ -94,7 +94,7 @@ def main() -> int:
         print("Constraint engine dry-run for function header generation")
         test_context_text = (
             "You must output a function call as JSON with keys "
-            "'fn_name' and 'args'."
+            "'fn_name' and 'args' to greet 'Ernesto'."
         )
         test_context_token_ids = llm_client.encode(test_context_text)
         for step_index in range(64):
@@ -108,9 +108,17 @@ def main() -> int:
                 break
 
             if not decision.valid_token_ids:
-                print("Header generation completed.")
+                if decision.phase == state.phase:
+                    print("No more valid tokens for the current phase.")
+                else:
+                    print(f"Phase transition reached: {decision.phase}")
+
                 print(f"Selected function: {state.selected_function_name}")
                 print(f"Pending parameters: {state.pending_parameter_names}")
+                print(f"Current parameter: {state.current_parameter_name}")
+                print(
+                    f"Current parameter type: {state.current_parameter_type}"
+                )
                 print(f"Generated text: {state.partial_output_text}")
                 break
 
