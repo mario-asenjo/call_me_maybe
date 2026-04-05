@@ -11,8 +11,13 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from src.errors import InputFileError, InputJsonError, InputValidationError
-from src.models import FunctionDefinition, PromptItem
+from src.domain import (
+    FunctionDefinition,
+    InputJsonError,
+    InputFileError,
+    InputValidationError,
+    PromptItem
+)
 
 
 def load_json_file(path: Path) -> Any:

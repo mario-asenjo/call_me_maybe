@@ -6,7 +6,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
-from src.errors import InputJsonError, InputFileError
+from src.domain import InputJsonError, InputFileError
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
@@ -22,6 +22,8 @@ def load_json_object(path: Path) -> dict[str, Any]:
             data = json.load(handle)
     except FileNotFoundError as exc:
         raise InputFileError(f"Vocabulary file not found: {path}") from exc
+    except OSError as exc:
+        raise InputFileError(f"Could not read file: {path}") from exc
     except JSONDecodeError as exc:
         raise InputJsonError(
             f"Invalid JSON in vocabulary file '{path}': "

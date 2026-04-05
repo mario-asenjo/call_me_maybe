@@ -58,9 +58,9 @@
 - [x] Tipar y documentar adaptador
 
 ## 5. Índices de vocabulario y utilidades de tokenización
-- [ ] Crear `src/vocab_loader.py`
-- [ ] Cargar vocabulario JSON
-- [ ] Mapear `token_id -> texto`
+- [x] Crear `src/vocab_loader.py`
+- [x] Cargar vocabulario JSON
+- [x] Mapear `token_id -> texto`
 - [ ] Normalizar representación de tokens si hace falta
 - [ ] Identificar tokens estructurales útiles
 - [ ] Diseñar estructura de prefijos para literales válidos
