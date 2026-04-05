@@ -74,6 +74,10 @@ class ConstraintEngine:
         """Build the fixed JSON prefix for a function call header"""
         return f'{{"fn_name":"{function_name}","args":{{'
 
+    def _build_next_arg_key_text(self, parameter_name: str) -> str:
+        """Build the JSON fragment for the next argument key"""
+        return f'"{parameter_name}":'
+
     def _get_matching_function_headers(
             self,
             prefix_token_ids: list[int]
@@ -87,6 +91,20 @@ class ConstraintEngine:
             if header_token_ids[: len(prefix_token_ids)] == prefix_token_ids:
                 matches[function_name] = header_token_ids
         return matches
+
+    def _get_matching_next_arg_key_options(
+            self,
+            state: ConstraintState
+    ) -> dict[str, list[int]]:
+        """Return compatible tokenized options for the next argument key"""
+        if not state.pending_parameter_names:
+            return {}
+
+        next_parameter_name = state.pending_parameter_names[0]
+        option_text = self._build_next_arg_key_text(next_parameter_name)
+        option_token_ids = self._llm_client.encode(option_text)
+
+        return {next_parameter_name: option_token_ids}
 
     def _try_finalize_function_selection(
             self,
@@ -115,51 +133,132 @@ class ConstraintEngine:
             self,
             state: ConstraintState
     ) -> ConstraintDecision:
-        """
-        Compute valid token IDs for the current state
-        (Current implementation only supports the fixed prefix:
-            {"fn_name":"<function_name>", "args":{
-        :param state: Current state
-        :return: Valid toke IDs for the current state
-        """
-        prefix_token_ids = state.partial_output_token_ids
-        matching_headers = self._get_matching_function_headers(
-            prefix_token_ids
-        )
+        """Compute valid token IDs for the current state."""
+        if state.phase in (
+                ConstraintPhase.START_OBJECT,
+                ConstraintPhase.EXPECT_FN_NAME_KEY,
+                ConstraintPhase.EXPECT_FN_NAME_VALUE,
+                ConstraintPhase.EXPECT_ARGS_KEY,
+                ConstraintPhase.EXPECT_ARGS_OBJECT_START,
+        ):
+            prefix_token_ids = state.partial_output_token_ids
+            matching_headers = self._get_matching_function_headers(prefix_token_ids)
 
-        if not matching_headers:
-            return ConstraintDecision(
-                phase=ConstraintPhase.ERROR,
-                valid_token_ids=[],
-                note=None,
-                error=GenerationErrorInfo(
-                    phase=state.phase,
-                    message="No valid function header matches"
-                            " the current token prefix",
-                    partial_text=state.partial_output_text,
-                    partial_token_ids=state.partial_output_token_ids
+            if not matching_headers:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.ERROR,
+                    valid_token_ids=[],
+                    note=None,
+                    error=GenerationErrorInfo(
+                        phase=state.phase,
+                        message="No valid function header matches the current token prefix",
+                        partial_text=state.partial_output_text,
+                        partial_token_ids=state.partial_output_token_ids
+                    )
                 )
+
+            next_token_ids: set[int] = set()
+            for header_token_ids in matching_headers.values():
+                if len(prefix_token_ids) < len(header_token_ids):
+                    next_token_ids.add(header_token_ids[len(prefix_token_ids)])
+
+            if not next_token_ids:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END,
+                    valid_token_ids=[],
+                    note="Function header fully generated",
+                    error=None
+                )
+
+            return ConstraintDecision(
+                phase=state.phase,
+                valid_token_ids=sorted(next_token_ids),
+                note="Valid next tokens computed from matching function headers",
+                error=None
             )
 
-        next_token_ids: set[int] = set()
-        for header_token_ids in matching_headers.values():
-            if len(prefix_token_ids) < len(header_token_ids):
-                next_token_ids.add(header_token_ids[len(prefix_token_ids)])
+        if state.phase == ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END:
+            if not state.pending_parameter_names:
+                closing_token_ids = self._llm_client.encode("}")
+                return ConstraintDecision(
+                    phase=state.phase,
+                    valid_token_ids=[closing_token_ids[0]],
+                    note="No pending parameters left, args object can be closed.",
+                    error=None
+                )
 
-        if not next_token_ids:
-            # We have fully consumed one valid header
+            next_parameter_name = state.pending_parameter_names[0]
+            option_token_ids = self._llm_client.encode(
+                self._build_next_arg_key_text(next_parameter_name)
+            )
+
+            prefix_token_ids = state.partial_output_token_ids
+            arg_scope_prefix = self._function_header_token_ids[
+                state.selected_function_name  # type: ignore[index]
+            ]
+
+            relative_prefix = prefix_token_ids[len(arg_scope_prefix):]
+
+            if len(relative_prefix) > len(option_token_ids):
+                return ConstraintDecision(
+                    phase=ConstraintPhase.ERROR,
+                    valid_token_ids=[],
+                    note=None,
+                    error=GenerationErrorInfo(
+                        phase=state.phase,
+                        message="Current argument-key prefix is longer than the valid option.",
+                        partial_text=state.partial_output_text,
+                        partial_token_ids=state.partial_output_token_ids
+                    )
+                )
+
+            if option_token_ids[: len(relative_prefix)] != relative_prefix:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.ERROR,
+                    valid_token_ids=[],
+                    note=None,
+                    error=GenerationErrorInfo(
+                        phase=state.phase,
+                        message="Current argument-key prefix does not match the expected parameter.",
+                        partial_text=state.partial_output_text,
+                        partial_token_ids=state.partial_output_token_ids
+                    )
+                )
+
+            if len(relative_prefix) == len(option_token_ids):
+                return ConstraintDecision(
+                    phase=ConstraintPhase.EXPECT_ARG_VALUE,
+                    valid_token_ids=[],
+                    note="Argument key fully generated, next step is the value.",
+                    error=None
+                )
+
+            next_token_id = option_token_ids[len(relative_prefix)]
             return ConstraintDecision(
-                phase=ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END,
+                phase=state.phase,
+                valid_token_ids=[next_token_id],
+                note="Restricting generation to the next argument key.",
+                error=None
+            )
+
+        if state.phase == ConstraintPhase.EXPECT_ARG_VALUE:
+            return ConstraintDecision(
+                phase=state.phase,
                 valid_token_ids=[],
-                note="Function header fully generated",
+                note="Argument value generation is the next implementation step.",
                 error=None
             )
 
         return ConstraintDecision(
-            phase=state.phase,
-            valid_token_ids=sorted(next_token_ids),
-            note="Valid next tookens computed from matching function headers",
-            error=None
+            phase=ConstraintPhase.ERROR,
+            valid_token_ids=[],
+            note=None,
+            error=GenerationErrorInfo(
+                phase=state.phase,
+                message="Unsupported constraint phase in current implementation.",
+                partial_text=state.partial_output_text,
+                partial_token_ids=state.partial_output_token_ids
+            )
         )
 
     def advance_state_with_token(
@@ -167,7 +266,7 @@ class ConstraintEngine:
             state: ConstraintState,
             token_id: int
     ) -> ConstraintState:
-        """Advance the logical state by appending one generated token"""
+        """Advance the logical state by appending one generated token."""
         new_token_ids = [*state.partial_output_token_ids, token_id]
         new_text = self._llm_client.decode(new_token_ids)
 
@@ -177,4 +276,30 @@ class ConstraintEngine:
                 "partial_output_text": new_text
             }
         )
-        return self._try_finalize_function_selection(new_state)
+        new_state = self._try_finalize_function_selection(new_state)
+
+        if (
+                new_state.selected_function_name is not None
+                and new_state.phase == ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END
+                and new_state.pending_parameter_names
+        ):
+            header_token_ids = self._function_header_token_ids[
+                new_state.selected_function_name
+            ]
+            next_parameter_name = new_state.pending_parameter_names[0]
+            option_token_ids = self._llm_client.encode(
+                self._build_next_arg_key_text(next_parameter_name)
+            )
+            relative_prefix = new_state.partial_output_token_ids[len(header_token_ids):]
+
+            if relative_prefix == option_token_ids:
+                function_definition = self.get_function_definition(
+                    new_state.selected_function_name
+                )
+                parameter_spec = function_definition.parameters[next_parameter_name]
+
+                new_state.current_parameter_name = next_parameter_name
+                new_state.current_parameter_type = parameter_spec.type
+                new_state.phase = ConstraintPhase.EXPECT_ARG_VALUE
+
+        return new_state

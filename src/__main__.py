@@ -108,9 +108,15 @@ def main() -> int:
                 break
 
             if not decision.valid_token_ids:
-                print("Header generation completed.")
+                if decision.phase == state.phase:
+                    print("No more valid tokens for the current phase.")
+                else:
+                    print(f"Phase transition reached: {decision.phase}")
+
                 print(f"Selected function: {state.selected_function_name}")
                 print(f"Pending parameters: {state.pending_parameter_names}")
+                print(f"Current parameter: {state.current_parameter_name}")
+                print(f"Current parameter type: {state.current_parameter_type}")
                 print(f"Generated text: {state.partial_output_text}")
                 break
 
