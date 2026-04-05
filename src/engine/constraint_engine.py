@@ -48,7 +48,8 @@ class ConstraintEngine:
         }
         self._function_header_token_ids = {
             function_name: self._llm_client.encode(header_text)
-            for function_name, header_text in self._function_header_texts.items()
+            for function_name, header_text
+            in self._function_header_texts.items()
         }
 
     def initial_state(self) -> ConstraintState:
@@ -79,7 +80,8 @@ class ConstraintEngine:
     ) -> dict[str, list[int]]:
         """Return all function headers compatible with the current prefix"""
         matches: dict[str, list[int]] = {}
-        for function_name, header_token_ids in self._function_header_token_ids.items():
+        for function_name, header_token_ids \
+                in self._function_header_token_ids.items():
             if len(prefix_token_ids) > len(header_token_ids):
                 continue
             if header_token_ids[: len(prefix_token_ids)] == prefix_token_ids:
@@ -94,11 +96,16 @@ class ConstraintEngine:
         if state.selected_function_name is not None:
             return state
 
-        for function_name, header_token_ids in self._function_header_token_ids.items():
+        for function_name, header_token_ids \
+                in self._function_header_token_ids.items():
             if state.partial_output_token_ids == header_token_ids:
-                function_definition = self.get_function_definition(function_name)
+                function_definition = self.get_function_definition(
+                    function_name
+                )
                 state.selected_function_name = function_name
-                state.pending_parameter_names = list(function_definition.parameters)
+                state.pending_parameter_names = list(
+                    function_definition.parameters
+                )
                 state.phase = ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END
                 return state
 
@@ -116,7 +123,9 @@ class ConstraintEngine:
         :return: Valid toke IDs for the current state
         """
         prefix_token_ids = state.partial_output_token_ids
-        matching_headers = self._get_matching_function_headers(prefix_token_ids)
+        matching_headers = self._get_matching_function_headers(
+            prefix_token_ids
+        )
 
         if not matching_headers:
             return ConstraintDecision(
@@ -125,7 +134,8 @@ class ConstraintEngine:
                 note=None,
                 error=GenerationErrorInfo(
                     phase=state.phase,
-                    message="No valid function header matches the current token prefix",
+                    message="No valid function header matches"
+                            " the current token prefix",
                     partial_text=state.partial_output_text,
                     partial_token_ids=state.partial_output_token_ids
                 )

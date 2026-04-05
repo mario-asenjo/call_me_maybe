@@ -114,20 +114,28 @@ def main() -> int:
                 print(f"Generated text: {state.partial_output_text}")
                 break
 
-            model_input_token_ids = test_context_token_ids + state.partial_output_token_ids
+            model_input_token_ids = (
+                    test_context_token_ids + state.partial_output_token_ids
+            )
             logits = llm_client.get_next_token_logits(model_input_token_ids)
             chosen_token_id = max(
                 decision.valid_token_ids,
                 key=lambda token_id: logits[token_id]
             )
-            state = constraint_engine.advance_state_with_token(state, chosen_token_id)
+            state = constraint_engine.advance_state_with_token(
+                state,
+                chosen_token_id
+            )
         return 0
     except ProjectError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
-        print(f"Unexpected error: {exc.__traceback__.tb_next.tb_frame}", file=sys.stderr)
+        print(
+            f"Unexpected error: {exc.__traceback__.tb_next.tb_frame}",
+            file=sys.stderr
+        )
         return 1
 
 
