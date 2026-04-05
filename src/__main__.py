@@ -116,7 +116,9 @@ def main() -> int:
                 print(f"Selected function: {state.selected_function_name}")
                 print(f"Pending parameters: {state.pending_parameter_names}")
                 print(f"Current parameter: {state.current_parameter_name}")
-                print(f"Current parameter type: {state.current_parameter_type}")
+                print(
+                    f"Current parameter type: {state.current_parameter_type}"
+                )
                 print(f"Generated text: {state.partial_output_text}")
                 break
 

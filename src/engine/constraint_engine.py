@@ -142,7 +142,9 @@ class ConstraintEngine:
                 ConstraintPhase.EXPECT_ARGS_OBJECT_START,
         ):
             prefix_token_ids = state.partial_output_token_ids
-            matching_headers = self._get_matching_function_headers(prefix_token_ids)
+            matching_headers = self._get_matching_function_headers(
+                prefix_token_ids
+            )
 
             if not matching_headers:
                 return ConstraintDecision(
@@ -151,7 +153,8 @@ class ConstraintEngine:
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="No valid function header matches the current token prefix",
+                        message="No valid function header "
+                                "matches the current token prefix",
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
                     )
@@ -173,7 +176,8 @@ class ConstraintEngine:
             return ConstraintDecision(
                 phase=state.phase,
                 valid_token_ids=sorted(next_token_ids),
-                note="Valid next tokens computed from matching function headers",
+                note="Valid next tokens computed from matching"
+                     " function headers",
                 error=None
             )
 
@@ -183,7 +187,8 @@ class ConstraintEngine:
                 return ConstraintDecision(
                     phase=state.phase,
                     valid_token_ids=[closing_token_ids[0]],
-                    note="No pending parameters left, args object can be closed.",
+                    note="No pending parameters left, args object"
+                         " can be closed.",
                     error=None
                 )
 
@@ -206,7 +211,8 @@ class ConstraintEngine:
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="Current argument-key prefix is longer than the valid option.",
+                        message="Current argument-key prefix is longer"
+                                " than the valid option.",
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
                     )
@@ -219,7 +225,8 @@ class ConstraintEngine:
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="Current argument-key prefix does not match the expected parameter.",
+                        message="Current argument-key prefix does not "
+                                "match the expected parameter.",
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
                     )
@@ -229,7 +236,8 @@ class ConstraintEngine:
                 return ConstraintDecision(
                     phase=ConstraintPhase.EXPECT_ARG_VALUE,
                     valid_token_ids=[],
-                    note="Argument key fully generated, next step is the value.",
+                    note="Argument key fully generated, next step is the"
+                         " value.",
                     error=None
                 )
 
@@ -245,7 +253,8 @@ class ConstraintEngine:
             return ConstraintDecision(
                 phase=state.phase,
                 valid_token_ids=[],
-                note="Argument value generation is the next implementation step.",
+                note="Argument value generation is the next implementation"
+                     " step.",
                 error=None
             )
 
@@ -255,7 +264,8 @@ class ConstraintEngine:
             note=None,
             error=GenerationErrorInfo(
                 phase=state.phase,
-                message="Unsupported constraint phase in current implementation.",
+                message="Unsupported constraint phase in current"
+                        " implementation.",
                 partial_text=state.partial_output_text,
                 partial_token_ids=state.partial_output_token_ids
             )
@@ -280,7 +290,8 @@ class ConstraintEngine:
 
         if (
                 new_state.selected_function_name is not None
-                and new_state.phase == ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END
+                and (new_state.phase ==
+                     ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END)
                 and new_state.pending_parameter_names
         ):
             header_token_ids = self._function_header_token_ids[
@@ -290,13 +301,17 @@ class ConstraintEngine:
             option_token_ids = self._llm_client.encode(
                 self._build_next_arg_key_text(next_parameter_name)
             )
-            relative_prefix = new_state.partial_output_token_ids[len(header_token_ids):]
+            relative_prefix = new_state.partial_output_token_ids[
+                len(header_token_ids):
+            ]
 
             if relative_prefix == option_token_ids:
                 function_definition = self.get_function_definition(
                     new_state.selected_function_name
                 )
-                parameter_spec = function_definition.parameters[next_parameter_name]
+                parameter_spec = function_definition.parameters[
+                    next_parameter_name
+                ]
 
                 new_state.current_parameter_name = next_parameter_name
                 new_state.current_parameter_type = parameter_spec.type
