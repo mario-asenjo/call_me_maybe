@@ -38,7 +38,11 @@ from src.domain import (
 )
 
 from src.engine import ConstraintEngine, ConstraintState, GenerationTrace
-from src.infrastructure import LlmClient, invert_vocab_mapping, load_json_object
+from src.infrastructure import (
+    LlmClient,
+    invert_vocab_mapping,
+    load_json_object
+)
 
 __all__ = [
     "ConstraintState",

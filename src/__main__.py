@@ -10,7 +10,11 @@ from pathlib import Path
 
 from src.domain import ProjectError
 from src.application import load_function_definitions, load_prompt_items
-from src.infrastructure import load_json_object, invert_vocab_mapping, LlmClient
+from src.infrastructure import (
+    load_json_object,
+    invert_vocab_mapping,
+    LlmClient
+)
 from src.config import (
     DEFAULT_FUNCTION_DEFINITIONS,
     DEFAULT_OUTPUT_FILE,

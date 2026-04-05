@@ -42,7 +42,10 @@ class ConstraintEngine:
         """
         return ConstraintState()
 
-    def get_function_definition(self, function_name: str) -> FunctionDefinition:
+    def get_function_definition(
+            self,
+            function_name: str
+    ) -> FunctionDefinition:
         """
         Return a function definition by name
         :param function_name: The function definition name
