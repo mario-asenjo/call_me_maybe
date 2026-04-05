@@ -78,7 +78,7 @@ class ConstraintEngine:
             prefix_token_ids: list[int]
     ) -> dict[str, list[int]]:
         """Return all function headers compatible with the current prefix"""
-        matches: dict[str, list[int]] = []
+        matches: dict[str, list[int]] = {}
         for function_name, header_token_ids in self._function_header_token_ids.items():
             if len(prefix_token_ids) > len(header_token_ids):
                 continue
