@@ -132,10 +132,6 @@ def main() -> int:
         return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
-        print(
-            f"Unexpected error: {exc.__traceback__.tb_next.tb_frame}",
-            file=sys.stderr
-        )
         return 1
 
 
