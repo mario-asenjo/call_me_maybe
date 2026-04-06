@@ -10,17 +10,12 @@ from pathlib import Path
 
 from src.domain import ProjectError
 from src.application import load_function_definitions, load_prompt_items
-from src.infrastructure import (
-    load_json_object,
-    invert_vocab_mapping,
-    LlmClient
-)
+from src.infrastructure import LlmClient
 from src.config import (
     DEFAULT_FUNCTION_DEFINITIONS,
     DEFAULT_OUTPUT_FILE,
     DEFAULT_PROMPT_TESTS
 )
-from src.engine import ConstraintEngine
 
 
 def build_argument_parser() -> ArgumentParser:
@@ -59,81 +54,28 @@ def main() -> int:
         )
         prompt_items = load_prompt_items(args.input)
         llm_client = LlmClient()
-        vocab_path = llm_client.get_vocab_file_path()
-        vocab_data = load_json_object(vocab_path)
-        inverted_vocab = invert_vocab_mapping(vocab_data)
 
+        print("\n" + "=" * 15 + " INFO - FILE LOADING " + "=" * 15)
         print(
             "Inputs loaded successfully: "
             f"{len(function_definitions)} function definitions, "
             f"{len(prompt_items)} prompts."
         )
-        print(f"Vocabulary file: {vocab_path}")
-        print(f"Vocabulary size: {len(inverted_vocab)}")
+
         print(f"Prompt input file: {args.input}")
         print(f"Planned output path: {args.output}\n")
-        sample_texts = [
-            '{"fn_name":"fn_add_numbers","args":{"a":2.0,"b":3.0}}',
-            '"hello"',
-            '"\\\\d+"',
-            '"C:\\\\Users\\\\john\\\\config.ini"'
-        ]
-        for sample in sample_texts:
-            token_ids = llm_client.encode(sample)
-            decoded = llm_client.decode(token_ids)
-            print("-" * 60)
-            print(f"Sample: {sample}")
-            print(f"Token count: {len(token_ids)}")
-            print(f"Token IDs: {token_ids}")
-            print(f"Decoded: {decoded}")
-        print("-" * 40)
-        print("TEST CONSTRAINT ENGINE - 1")
-        constraint_engine = ConstraintEngine(function_definitions, llm_client)
-        state = constraint_engine.initial_state()
-        print("-" * 60)
-        print("Constraint engine dry-run for function header generation")
-        test_context_text = (
-            "You must output a function call as JSON with keys "
-            "'fn_name' and 'args' to greet 'Ernesto'."
+
+        from src.engine import GenerationEngine
+
+        generation_engine = GenerationEngine(function_definitions, llm_client)
+
+        print("\n" + "=" * 15 + " INFO - REAL GENERATION TEST " + "=" * 15)
+        generated_core = generation_engine.generate_function_call_core(
+            prompt_items[0].prompt
         )
-        test_context_token_ids = llm_client.encode(test_context_text)
-        for step_index in range(64):
-            decision = constraint_engine.compute_valid_tokens(state)
-            print(
-                f"Step: {step_index}: phase={decision.phase}, "
-                f"valid_token_count={len(decision.valid_token_ids)}"
-            )
-            if decision.error is not None:
-                print(f"Constraint error: {decision.error.message}")
-                break
+        print(f"Prompt: {prompt_items[0].prompt}")
+        print(f"Generated core: {generated_core.model_dump()}")
 
-            if not decision.valid_token_ids:
-                if decision.phase == state.phase:
-                    print("No more valid tokens for the current phase.")
-                else:
-                    print(f"Phase transition reached: {decision.phase}")
-
-                print(f"Selected function: {state.selected_function_name}")
-                print(f"Pending parameters: {state.pending_parameter_names}")
-                print(f"Current parameter: {state.current_parameter_name}")
-                print(
-                    f"Current parameter type: {state.current_parameter_type}"
-                )
-                print(f"Generated text: {state.partial_output_text}")
-                break
-
-            model_input_token_ids = (
-                    test_context_token_ids + state.partial_output_token_ids
-            )
-            logits = llm_client.get_next_token_logits(model_input_token_ids)
-            chosen_token_id = max(
-                decision.valid_token_ids,
-                key=lambda token_id: logits[token_id]
-            )
-            state = constraint_engine.advance_state_with_token(
-                state,
-                chosen_token_id
-            )
         return 0
     except ProjectError as exc:
         print(f"Error: {exc}", file=sys.stderr)

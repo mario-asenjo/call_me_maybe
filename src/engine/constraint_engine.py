@@ -22,8 +22,17 @@ class ConstraintState(BaseModel):
     emitted_parameter_names: list[str] = Field(default_factory=list)
     current_parameter_name: str | None = None
     current_parameter_type: SchemaPrimitiveType | None = None
+
     partial_output_text: str = ""
     partial_output_token_ids: list[int] = Field(default_factory=list)
+
+    source_prompt: str = ""
+
+    current_value_text: str = ""
+    current_value_token_ids: list[int] = Field(default_factory=list)
+
+    current_key_text: str = ""
+    current_key_token_ids: list[int] = Field(default_factory=list)
 
 
 class ConstraintEngine:
@@ -52,12 +61,12 @@ class ConstraintEngine:
             in self._function_header_texts.items()
         }
 
-    def initial_state(self) -> ConstraintState:
+    def initial_state(self, source_prompt: str = "") -> ConstraintState:
         """
         Create the initial constraint state
         :return: A newly created ConstraintState object
         """
-        return ConstraintState()
+        return ConstraintState(source_prompt=source_prompt)
 
     def get_function_definition(
             self,
@@ -106,6 +115,50 @@ class ConstraintEngine:
 
         return {next_parameter_name: option_token_ids}
 
+    def _get_comma_token_id(self) -> int:
+        """Return the token ID used for a JSON comma"""
+        return self._llm_client.encode(",")[0]
+
+    def _get_closing_brace_token_id(self) -> int:
+        """Return the token ID used for a closing JSON brace"""
+        return self._llm_client.encode("}")[0]
+
+    def _extract_number_candidates_from_prompt(
+            self,
+            prompt: str
+    ) -> list[str]:
+        """Extract numeric candidates from the source prompt"""
+        import re
+
+        raw_numbers = re.findall(r"-?\d+(?:\.\d+)?", prompt)
+        candidates: list[str] = []
+
+        for raw_number in raw_numbers:
+            if raw_number not in candidates:
+                candidates.append(raw_number)
+
+            if "." not in raw_number:
+                float_variant = f"{raw_number}.0"
+                if float_variant not in candidates:
+                    candidates.append(float_variant)
+
+        return candidates
+
+    def _get_number_value_options(self, prompt: str) -> list[list[int]]:
+        """Build tokenized numeric value options from the prompt"""
+        candidates = self._extract_number_candidates_from_prompt(prompt)
+        return [self._llm_client.encode(candidate) for candidate in candidates]
+
+    def _reset_current_key_state(self, state: ConstraintState) -> None:
+        """Reset the current argument-key buffer state"""
+        state.current_key_text = ""
+        state.current_key_token_ids = []
+
+    def _reset_current_value_state(self, state: ConstraintState) -> None:
+        """Reset the current argument-value buffer state"""
+        state.current_value_text = ""
+        state.current_value_token_ids = []
+
     def _try_finalize_function_selection(
             self,
             state: ConstraintState
@@ -124,6 +177,8 @@ class ConstraintEngine:
                 state.pending_parameter_names = list(
                     function_definition.parameters
                 )
+                self._reset_current_key_state(state)
+                self._reset_current_value_state(state)
                 state.phase = ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END
                 return state
 
@@ -197,12 +252,7 @@ class ConstraintEngine:
                 self._build_next_arg_key_text(next_parameter_name)
             )
 
-            prefix_token_ids = state.partial_output_token_ids
-            arg_scope_prefix = self._function_header_token_ids[
-                state.selected_function_name  # type: ignore[index]
-            ]
-
-            relative_prefix = prefix_token_ids[len(arg_scope_prefix):]
+            relative_prefix = state.current_key_token_ids
 
             if len(relative_prefix) > len(option_token_ids):
                 return ConstraintDecision(
@@ -219,14 +269,21 @@ class ConstraintEngine:
                 )
 
             if option_token_ids[: len(relative_prefix)] != relative_prefix:
+                expected_key_text = self._build_next_arg_key_text(
+                    next_parameter_name
+                )
                 return ConstraintDecision(
                     phase=ConstraintPhase.ERROR,
                     valid_token_ids=[],
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="Current argument-key prefix does not "
-                                "match the expected parameter.",
+                        message=(
+                            "Current argument-key prefix does not "
+                            "match the expected parameter. Expected key "
+                            f"fragment: {expected_key_text!r}, current "
+                            f"key text: {state.current_key_text!r}"
+                        ),
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
                     )
@@ -250,11 +307,106 @@ class ConstraintEngine:
             )
 
         if state.phase == ConstraintPhase.EXPECT_ARG_VALUE:
+            if state.current_parameter_type != "number":
+                return ConstraintDecision(
+                    phase=state.phase,
+                    valid_token_ids=[],
+                    note="Current implementation only supports numeric "
+                         "argument values.",
+                    error=None
+                )
+
+            value_options = self._get_number_value_options(
+                state.source_prompt
+            )
+            if not value_options:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.ERROR,
+                    valid_token_ids=[],
+                    note=None,
+                    error=GenerationErrorInfo(
+                        phase=state.phase,
+                        message="No numeric candidates could be extracted "
+                                "from the prompt.",
+                        partial_text=state.partial_output_text,
+                        partial_token_ids=state.partial_output_token_ids
+                    )
+                )
+
+            relative_value_prefix = state.current_value_token_ids
+            matching_value_options: list[list[int]] = []
+
+            for option_token_ids in value_options:
+                if len(relative_value_prefix) > len(option_token_ids):
+                    continue
+                if option_token_ids[
+                    : len(relative_value_prefix)
+                ] == relative_value_prefix:
+                    matching_value_options.append(option_token_ids)
+
+            if not matching_value_options:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.ERROR,
+                    valid_token_ids=[],
+                    note=None,
+                    error=GenerationErrorInfo(
+                        phase=state.phase,
+                        message="No numeric value option matches the current"
+                                " value prefix.",
+                        partial_text=state.partial_output_text,
+                        partial_token_ids=state.partial_output_token_ids
+                    )
+                )
+
+            next_token_ids: set[int] = set()
+            fully_matched_option_exists = False
+
+            for option_token_ids in matching_value_options:
+                if len(relative_value_prefix) == len(option_token_ids):
+                    fully_matched_option_exists = True
+                else:
+                    next_token_ids.add(
+                        option_token_ids[len(relative_value_prefix)]
+                    )
+
+            if fully_matched_option_exists and not next_token_ids:
+                return ConstraintDecision(
+                    phase=ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END,
+                    valid_token_ids=[],
+                    note="Numeric argument value fully generated.",
+                    error=None
+                )
+
             return ConstraintDecision(
                 phase=state.phase,
-                valid_token_ids=[],
-                note="Argument value generation is the next implementation"
-                     " step.",
+                valid_token_ids=sorted(next_token_ids),
+                note="Restricting generation to numeric candidates extracted"
+                     " from the prompt.",
+                error=None
+            )
+
+        if state.phase == ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END:
+            if state.pending_parameter_names:
+                return ConstraintDecision(
+                    phase=state.phase,
+                    valid_token_ids=[self._get_comma_token_id()],
+                    note="More parameters remain, so a comma must be"
+                         " generated.",
+                    error=None
+                )
+
+            return ConstraintDecision(
+                phase=state.phase,
+                valid_token_ids=[self._get_closing_brace_token_id()],
+                note="All parameters emitted, args object can be closed.",
+                error=None
+            )
+
+        if state.phase == ConstraintPhase.EXPECT_FINAL_OBJECT_END:
+            return ConstraintDecision(
+                phase=state.phase,
+                valid_token_ids=[self._get_closing_brace_token_id()],
+                note="Closing the root JSON object.",
                 error=None
             )
 
@@ -277,6 +429,8 @@ class ConstraintEngine:
             token_id: int
     ) -> ConstraintState:
         """Advance the logical state by appending one generated token."""
+        previous_selected_function_name = state.selected_function_name
+
         new_token_ids = [*state.partial_output_token_ids, token_id]
         new_text = self._llm_client.decode(new_token_ids)
 
@@ -289,23 +443,40 @@ class ConstraintEngine:
         new_state = self._try_finalize_function_selection(new_state)
 
         if (
+            previous_selected_function_name is None
+            and new_state.selected_function_name is not None
+        ):
+            return new_state
+        if (
                 new_state.selected_function_name is not None
                 and (new_state.phase ==
                      ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END)
                 and new_state.pending_parameter_names
         ):
-            header_token_ids = self._function_header_token_ids[
-                new_state.selected_function_name
-            ]
             next_parameter_name = new_state.pending_parameter_names[0]
             option_token_ids = self._llm_client.encode(
                 self._build_next_arg_key_text(next_parameter_name)
             )
-            relative_prefix = new_state.partial_output_token_ids[
-                len(header_token_ids):
+
+            candidate_key_token_ids = [
+                *new_state.current_key_token_ids, token_id
             ]
 
-            if relative_prefix == option_token_ids:
+            if option_token_ids[
+                : len(candidate_key_token_ids)
+            ] == candidate_key_token_ids:
+                new_key_token_ids = candidate_key_token_ids
+            elif option_token_ids[:1] == [token_id]:
+                new_key_token_ids = [token_id]
+            else:
+                new_key_token_ids = candidate_key_token_ids
+
+            new_key_text = self._llm_client.decode(new_key_token_ids)
+
+            new_state.current_key_token_ids = new_key_token_ids
+            new_state.current_key_text = new_key_text
+
+            if new_key_token_ids == option_token_ids:
                 function_definition = self.get_function_definition(
                     new_state.selected_function_name
                 )
@@ -315,6 +486,67 @@ class ConstraintEngine:
 
                 new_state.current_parameter_name = next_parameter_name
                 new_state.current_parameter_type = parameter_spec.type
+                self._reset_current_value_state(new_state)
                 new_state.phase = ConstraintPhase.EXPECT_ARG_VALUE
+                return new_state
+
+            return new_state
+
+        if new_state.phase == ConstraintPhase.EXPECT_ARG_VALUE:
+            new_value_token_ids = [
+                *new_state.current_value_token_ids, token_id
+            ]
+            new_value_text = self._llm_client.decode(new_value_token_ids)
+
+            new_state.current_value_token_ids = new_value_token_ids
+            new_state.current_value_text = new_value_text
+
+            if new_state.current_parameter_type == "number":
+                value_options = self._get_number_value_options(
+                    new_state.source_prompt
+                )
+                if any(
+                        new_value_token_ids == option
+                        for option in value_options
+                ):
+                    if new_state.current_parameter_name is not None:
+                        new_state.emitted_parameter_names = [
+                            *new_state.emitted_parameter_names,
+                            new_state.current_parameter_name
+                        ]
+                        new_state.pending_parameter_names = [
+                            name
+                            for name in new_state.pending_parameter_names
+                            if name != new_state.current_parameter_name
+                        ]
+                        new_state.phase = (
+                            ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END
+                        )
+            return new_state
+
+        if new_state.phase == ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END:
+            comma_token_id = self._get_comma_token_id()
+            closing_brace_token_id = self._get_closing_brace_token_id()
+
+            if token_id == comma_token_id:
+                new_state.current_parameter_name = None
+                new_state.current_parameter_type = None
+                self._reset_current_key_state(new_state)
+                self._reset_current_value_state(new_state)
+                new_state.phase = ConstraintPhase.EXPECT_NEXT_ARG_KEY_OR_END
+                return new_state
+
+            if token_id == closing_brace_token_id:
+                new_state.current_parameter_name = None
+                new_state.current_parameter_type = None
+                self._reset_current_key_state(new_state)
+                self._reset_current_value_state(new_state)
+                new_state.phase = ConstraintPhase.EXPECT_FINAL_OBJECT_END
+                return new_state
+
+        if new_state.phase == ConstraintPhase.EXPECT_FINAL_OBJECT_END:
+            if token_id == self._get_closing_brace_token_id():
+                new_state.phase = ConstraintPhase.DONE
+                return new_state
 
         return new_state
