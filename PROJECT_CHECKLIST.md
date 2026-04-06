@@ -65,26 +65,26 @@
 - [ ] Identificar tokens estructurales útiles
 - [ ] Diseñar estructura de prefijos para literales válidos
 - [ ] Preparar soporte para cadenas
-- [ ] Preparar soporte para números
+- [x] Preparar soporte para números
 - [ ] Documentar limitaciones de BPE/tokenización
 
 ## 6. Diseño de la salida restringida
-- [ ] Fijar formato interno restringido:
-  - [ ] `{"fn_name":"...","args":{...}}`
-- [ ] Fijar formato final serializado:
-  - [ ] `{"prompt":"...","fn_name":"...","args":{...}}`
-- [ ] Confirmar orden de ensamblaje
-- [ ] Confirmar ausencia de claves extra
-- [ ] Confirmar que `prompt` se copia del input, no del LLM
+- [x] Fijar formato interno restringido:
+  - [x] `{"fn_name":"...","args":{...}}`
+- [x] Fijar formato final serializado:
+  - [x] `{"prompt":"...","fn_name":"...","args":{...}}`
+- [x] Confirmar orden de ensamblaje
+- [x] Confirmar ausencia de claves extra
+- [x] Confirmar que `prompt` se copia del input, no del LLM
 
 ## 7. Motor de restricciones
-- [ ] Crear `src/constraint_engine.py`
-- [ ] Definir estados de la generación
-- [ ] Restringir apertura de objeto JSON
-- [ ] Restringir clave `fn_name`
-- [ ] Restringir valor de `fn_name` al conjunto permitido
-- [ ] Restringir transición a `args`
-- [ ] Restringir claves de `args` según la función elegida
+- [x] Crear `src/constraint_engine.py`
+- [x] Definir estados de la generación
+- [x] Restringir apertura de objeto JSON
+- [x] Restringir clave `fn_name`
+- [x] Restringir valor de `fn_name` al conjunto permitido
+- [x] Restringir transición a `args`
+- [x] Restringir claves de `args` según la función elegida
 - [ ] Restringir cierre correcto del objeto
 - [ ] Prohibir texto libre
 - [ ] Prohibir claves extra
@@ -92,7 +92,7 @@
 
 ## 8. Restricción por tipos
 - [ ] Soporte restringido para `string`
-- [ ] Soporte restringido para `number`
+- [x] Soporte restringido para `number`
 - [ ] Soporte restringido para `boolean`
 - [ ] Validar que los argumentos requeridos estén todos
 - [ ] Validar que no aparezcan argumentos no definidos
