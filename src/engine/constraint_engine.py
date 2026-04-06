@@ -358,7 +358,7 @@ class ConstraintEngine:
                     )
                 )
 
-            next_token_ids: set[int] = set()
+            next_token_ids = set()
             fully_matched_option_exists = False
 
             for option_token_ids in matching_value_options:
