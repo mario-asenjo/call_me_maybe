@@ -34,6 +34,9 @@ class ConstraintState(BaseModel):
     current_key_text: str = ""
     current_key_token_ids: list[int] = Field(default_factory=list)
 
+    consumed_number_slots: int = 0
+    consumed_string_slots: int = 0
+
 
 class ConstraintEngine:
     """Compute valid next-token sets for the structured JSON output"""
@@ -123,31 +126,118 @@ class ConstraintEngine:
         """Return the token ID used for a closing JSON brace"""
         return self._llm_client.encode("}")[0]
 
-    def _extract_number_candidates_from_prompt(
+    def _extract_number_slots_from_prompt(
             self,
             prompt: str
-    ) -> list[str]:
-        """Extract numeric candidates from the source prompt"""
+    ) -> list[list[str]]:
+        """Extract numeric slots from the prompt with theis allowed variants"""
         import re
 
         raw_numbers = re.findall(r"-?\d+(?:\.\d+)?", prompt)
-        candidates: list[str] = []
+        slots: list[list[str]] = []
 
         for raw_number in raw_numbers:
-            if raw_number not in candidates:
-                candidates.append(raw_number)
-
+            variants = [raw_number]
             if "." not in raw_number:
                 float_variant = f"{raw_number}.0"
-                if float_variant not in candidates:
-                    candidates.append(float_variant)
+                if float_variant not in variants:
+                    variants.append(float_variant)
+            slots.append(variants)
+
+        return slots
+
+    def _get_current_number_slot_candidates(
+            self,
+            state: ConstraintState
+    ) -> list[str]:
+        """Return the candidate variants for the next numeric slot"""
+        slots = self._extract_number_slots_from_prompt(state.source_prompt)
+
+        if state.consumed_number_slots >= len(slots):
+            return []
+
+        return slots[state.consumed_number_slots]
+
+    def _normalize_prompt_span(self, text: str) -> str:
+        """Normalize a candidate span extracted from the prompt"""
+        return text.strip().strip(",.;:!?").strip()
+
+    def _extract_quoted_string_candidates(
+            self,
+            prompt: str
+    ) -> list[str]:
+        """Extract quoted string candidates from the prompt"""
+        import re
+
+        matches = re.findall(r'"((?:[^"\\]|\\.)*)"|\'((?:[^\'\\]|\\.)*)\'', prompt)
+        candidates: list[str] = []
+
+        for double_quoted, single_quoted in matches:
+            value = double_quoted if double_quoted else single_quoted
+            value = self._normalize_prompt_span(value)
+            if value:
+                candidates.append(value)
 
         return candidates
 
-    def _get_number_value_options(self, prompt: str) -> list[list[int]]:
-        """Build tokenized numeric value options from the prompt"""
-        candidates = self._extract_number_candidates_from_prompt(prompt)
-        return [self._llm_client.encode(candidate) for candidate in candidates]
+    def _extract_unquoted_string_candidates(
+            self,
+            prompt: str,
+            max_words_per_span = 4
+    ) -> list[str]:
+        """Extract generic unquoted candidate spans from the prompt"""
+        import re
+
+        token_matches = re.findall(r"[A-Za-z0-9_'\-]+", prompt)
+        candidates: list[str] = []
+
+        for start_index in range(len(token_matches)):
+            for span_length in range(1, max_words_per_span + 1):
+                end_index = start_index + span_length
+                if end_index > len(token_matches):
+                    break
+
+                span = " ".join(token_matches[start_index:end_index])
+                span = self._normalize_prompt_span(span)
+
+                if span:
+                    candidates.append(span)
+
+        return candidates
+
+    def _build_string_candidate_bank(
+            self,
+            prompt: str
+    ) -> list[str]:
+        """Build a generic ordered bank of string candidates from the prompt"""
+        import json
+
+        raw_candidates: list[str] = []
+        raw_candidates.extend(self._extract_quoted_string_candidates(prompt))
+        raw_candidates.extend(self._extract_unquoted_string_candidates(prompt))
+
+        seen: set[str] = set()
+        ordered_json_candidates: list[str] = []
+
+        for candidate in raw_candidates:
+            if not candidate:
+                continue
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            ordered_json_candidates.append(json.dumps(candidate))
+
+        return ordered_json_candidates
+
+    def _get_current_string_slot_candidates(
+            self,
+            state: ConstraintState
+    ) -> list[str]:
+        """Return current candidate string literals for the active parameter"""
+        all_candidates = self._build_string_candidate_bank(state.source_prompt)
+
+        remaining_candidates = all_candidates[state.consumed_string_slots:]
+        return remaining_candidates
 
     def _reset_current_key_state(self, state: ConstraintState) -> None:
         """Reset the current argument-key buffer state"""
@@ -307,18 +397,22 @@ class ConstraintEngine:
             )
 
         if state.phase == ConstraintPhase.EXPECT_ARG_VALUE:
-            if state.current_parameter_type != "number":
+            if state.current_parameter_type == "number":
+                value_candidates = self._get_current_number_slot_candidates(state)
+            elif state.current_parameter_type == "string":
+                value_candidates = self._get_current_string_slot_candidates(state)
+            else:
                 return ConstraintDecision(
                     phase=state.phase,
                     valid_token_ids=[],
-                    note="Current implementation only supports numeric "
-                         "argument values.",
+                    note="Current imlementation only suports number and string parameter types",
                     error=None
                 )
 
-            value_options = self._get_number_value_options(
-                state.source_prompt
-            )
+            value_options = [
+                self._llm_client.encode(candidate)
+                for candidate in value_candidates
+            ]
             if not value_options:
                 return ConstraintDecision(
                     phase=ConstraintPhase.ERROR,
@@ -326,8 +420,15 @@ class ConstraintEngine:
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="No numeric candidates could be extracted "
-                                "from the prompt.",
+                        message=(
+                            "No valid candidates could be extracted "
+                            "from the prompt for "
+                            f"{state.current_parameter_type} "
+                            "argument type. "
+                            f"selected_function={state.selected_function_name!r}, "
+                            f"consumed_string_slots={state.consumed_string_slots}, "
+                            f"source_prompt={state.source_prompt!r}"
+                        ),
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
                     )
@@ -502,26 +603,37 @@ class ConstraintEngine:
             new_state.current_value_text = new_value_text
 
             if new_state.current_parameter_type == "number":
-                value_options = self._get_number_value_options(
-                    new_state.source_prompt
-                )
-                if any(
-                        new_value_token_ids == option
-                        for option in value_options
-                ):
-                    if new_state.current_parameter_name is not None:
-                        new_state.emitted_parameter_names = [
-                            *new_state.emitted_parameter_names,
-                            new_state.current_parameter_name
-                        ]
-                        new_state.pending_parameter_names = [
-                            name
-                            for name in new_state.pending_parameter_names
-                            if name != new_state.current_parameter_name
-                        ]
-                        new_state.phase = (
-                            ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END
-                        )
+                value_candidates = self._get_current_number_slot_candidates(new_state)
+            elif new_state.current_parameter_type == "string":
+                value_candidates = self._get_current_string_slot_candidates(new_state)
+            else:
+                value_candidates = []
+            value_options = [
+                self._llm_client.encode(candidate)
+                for candidate in value_candidates
+            ]
+            if any(
+                    new_value_token_ids == option
+                    for option in value_options
+            ):
+                if new_state.current_parameter_type == "number":
+                    new_state.consumed_number_slots += 1
+                elif new_state.current_parameter_type == "string":
+                    new_state.consumed_string_slots += 1
+
+                if new_state.current_parameter_name is not None:
+                    new_state.emitted_parameter_names = [
+                        *new_state.emitted_parameter_names,
+                        new_state.current_parameter_name
+                    ]
+                    new_state.pending_parameter_names = [
+                        name
+                        for name in new_state.pending_parameter_names
+                        if name != new_state.current_parameter_name
+                    ]
+                    new_state.phase = (
+                        ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END
+                    )
             return new_state
 
         if new_state.phase == ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END:

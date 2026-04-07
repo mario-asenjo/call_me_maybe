@@ -27,7 +27,7 @@
 - [x] No usar métodos/atributos privados de `llm_sdk`
 
 ## 2. Modelado y validación de datos
-- [x] Crear `src/models.py`
+- [x] Crear modelos de dominio
 - [x] Modelar definición de parámetro
 - [x] Modelar definición de función
 - [x] Modelar item de prompt
@@ -37,18 +37,18 @@
 - [x] Validar unicidad de nombres de función
 
 ## 3. Errores y carga de entrada
-- [x] Crear `src/errors.py`
-- [x] Crear `src/input_loader.py`
+- [x] Crear errores del dominio
+- [x] Crear loader de inputs
 - [x] Manejar archivo inexistente
 - [x] Manejar JSON inválido
 - [x] Manejar estructura JSON inválida
 - [x] Cargar funciones desde fichero
 - [x] Cargar prompts desde fichero
 - [x] Resolver rutas por defecto
-- [x] Emitir mensajes claros y defendibles
+- [x] Emitir mensajes claros
 
 ## 4. Integración con `llm_sdk`
-- [x] Crear `src/llm_client.py`
+- [x] Crear adaptador `llm_client`
 - [x] Encapsular `Small_LLM_Model`
 - [x] Usar solo API pública del SDK
 - [x] Cargar vocabulario vía `get_path_to_vocab_file()`
@@ -58,12 +58,12 @@
 - [x] Tipar y documentar adaptador
 
 ## 5. Índices de vocabulario y utilidades de tokenización
-- [x] Crear `src/vocab_loader.py`
+- [x] Crear `vocab_loader`
 - [x] Cargar vocabulario JSON
 - [x] Mapear `token_id -> texto`
 - [ ] Normalizar representación de tokens si hace falta
 - [ ] Identificar tokens estructurales útiles
-- [ ] Diseñar estructura de prefijos para literales válidos
+- [x] Diseñar estructura de prefijos para literales válidos
 - [ ] Preparar soporte para cadenas
 - [x] Preparar soporte para números
 - [ ] Documentar limitaciones de BPE/tokenización
@@ -78,16 +78,16 @@
 - [x] Confirmar que `prompt` se copia del input, no del LLM
 
 ## 7. Motor de restricciones
-- [x] Crear `src/constraint_engine.py`
+- [x] Crear `constraint_engine`
 - [x] Definir estados de la generación
 - [x] Restringir apertura de objeto JSON
 - [x] Restringir clave `fn_name`
 - [x] Restringir valor de `fn_name` al conjunto permitido
 - [x] Restringir transición a `args`
 - [x] Restringir claves de `args` según la función elegida
-- [ ] Restringir cierre correcto del objeto
-- [ ] Prohibir texto libre
-- [ ] Prohibir claves extra
+- [x] Restringir cierre correcto del objeto
+- [x] Prohibir texto libre en las fases implementadas
+- [x] Prohibir claves extra en las fases implementadas
 - [ ] Documentar la máquina de estados
 
 ## 8. Restricción por tipos
@@ -95,62 +95,64 @@
 - [x] Soporte restringido para `number`
 - [ ] Soporte restringido para `boolean`
 - [ ] Validar que los argumentos requeridos estén todos
-- [ ] Validar que no aparezcan argumentos no definidos
+- [x] Validar que no aparezcan argumentos no definidos en las fases implementadas
 - [ ] Asegurar que cada paso deja el JSON en estado recuperable
 
 ## 9. Selección de función con LLM
-- [ ] Diseñar prompt de sistema/instrucción mínimo
-- [ ] Incluir definiciones de funciones en contexto
-- [ ] Incluir prompt del usuario
-- [ ] Confirmar que `fn_name` lo decide el LLM
-- [ ] Confirmar que no hay heurísticas por keywords
+- [x] Diseñar prompt de sistema/instrucción mínimo
+- [x] Incluir definiciones de funciones en contexto
+- [x] Incluir prompt del usuario
+- [x] Confirmar que `fn_name` lo decide el LLM
+- [x] Confirmar que no hay heurísticas por keywords
+- [ ] Afinar la calidad semántica de selección para todos los prompts
 
 ## 10. Construcción de argumentos con LLM
-- [ ] Diseñar extracción restringida de argumentos
-- [ ] Confirmar tipado correcto
+- [x] Diseñar extracción restringida de argumentos numéricos
+- [x] Confirmar tipado correcto para `number`
 - [ ] Soportar cadenas vacías
-- [ ] Soportar números grandes
+- [x] Soportar números grandes
 - [ ] Soportar caracteres especiales
 - [ ] Revisar prompts ambiguos
-- [ ] Revisar funciones con múltiples parámetros
+- [x] Revisar funciones con múltiples parámetros numéricos
 
 ## 11. Motor de generación
-- [ ] Crear `src/generation_engine.py`
-- [ ] Bucle token a token
-- [ ] Obtener logits
-- [ ] Aplicar máscara de tokens válidos
-- [ ] Elegir mejor token válido
-- [ ] Actualizar estado
-- [ ] Detectar finalización
-- [ ] Manejar imposibilidad de continuación válida
-- [ ] Imponer límites de longitud razonables
+- [x] Crear `generation_engine.py`
+- [x] Bucle token a token
+- [x] Obtener logits
+- [x] Aplicar máscara de tokens válidos
+- [x] Elegir mejor token válido
+- [x] Actualizar estado
+- [x] Detectar finalización
+- [x] Manejar imposibilidad de continuación válida
+- [x] Imponer límites de longitud razonables
 
 ## 12. Ensamblaje y serialización final
-- [ ] Crear `src/serializer.py`
+- [ ] Crear `serializer.py`
 - [ ] Parsear salida restringida generada
 - [ ] Validarla con Pydantic
 - [ ] Añadir `prompt` original
 - [ ] Acumular resultados en lista
 - [ ] Escribir JSON final bonito y válido
 - [ ] Crear carpeta de salida si no existe
-- [ ] No subir `output/` al repo
+- [x] No subir `output/` al repo
 
 ## 13. CLI principal
-- [ ] Crear `src/__main__.py`
-- [ ] Soportar `--input`
-- [ ] Soportar `--output`
-- [ ] Definir defaults correctos
-- [ ] Propagar errores con mensajes claros
-- [ ] Devolver códigos de salida razonables
+- [x] Crear `__main__.py`
+- [x] Soportar `--input`
+- [x] Soportar `--output`
+- [x] Definir defaults correctos
+- [x] Propagar errores con mensajes claros
+- [x] Devolver códigos de salida razonables
+- [ ] Sustituir el test de generación única por ejecución real sobre todos los prompts
 
 ## 14. Makefile
-- [ ] `install`
-- [ ] `run`
-- [ ] `debug`
-- [ ] `clean`
-- [ ] `lint`
+- [x] `install`
+- [x] `run`
+- [x] `debug`
+- [x] `clean`
+- [x] `lint`
 - [ ] `lint-strict` (opcional)
-- [ ] Verificar que los comandos usan `uv`
+- [x] Verificar que los comandos usan `uv`
 
 ## 15. Tests
 - [ ] Tests de modelos Pydantic
@@ -177,7 +179,16 @@
 - [ ] Estrategia de pruebas
 - [ ] Ejemplos de uso
 
-## 17. Peer evaluation readiness
+## 17. Bonus readiness
+- [x] Base preparada para múltiples modelos LLM
+- [x] Base preparada para mecanismos avanzados de recuperación de errores
+- [x] Base preparada para trazas / visualización
+- [ ] Implementar visualización del proceso de generación
+- [ ] Suite comprensiva de tests
+- [ ] Reforzar recuperación avanzada de errores
+- [ ] Añadir optimizaciones / caches si hacen falta
+
+## 18. Peer evaluation readiness
 - [ ] Poder explicar por qué esto sí es decodificación restringida
 - [ ] Poder explicar por qué no se usan heurísticas
 - [ ] Poder explicar el mapeo token ↔ string
@@ -185,11 +196,11 @@
 - [ ] Poder justificar cada módulo
 - [ ] Poder hacer una recodificación pequeña en pocos minutos
 
-## 18. Revisión final antes de entrega
+## 19. Revisión final antes de entrega
 - [ ] `uv sync`
 - [ ] `uv run python -m src`
 - [ ] `make lint`
 - [ ] Tests en verde
 - [ ] README completo
-- [ ] `output/` no versionado
+- [x] `output/` no versionado
 - [ ] Repo limpio y defendible

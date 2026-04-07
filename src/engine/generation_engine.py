@@ -51,7 +51,7 @@ class GenerationEngine:
             f"{function_catalog}\n\n"
             "User prompt:\n"
             f"{prompt}\n\n"
-            'Return exactly on JSON object with keys "fn_name" and "args".\n'
+            'Return exactly one JSON object with keys "fn_name" and "args".\n'
             "Do not answer in natural language."
         )
 
