@@ -34,6 +34,8 @@ class ConstraintState(BaseModel):
     current_key_text: str = ""
     current_key_token_ids: list[int] = Field(default_factory=list)
 
+    consumed_number_slots: int = 0
+
 
 class ConstraintEngine:
     """Compute valid next-token sets for the structured JSON output"""
@@ -123,31 +125,37 @@ class ConstraintEngine:
         """Return the token ID used for a closing JSON brace"""
         return self._llm_client.encode("}")[0]
 
-    def _extract_number_candidates_from_prompt(
+    def _extract_number_slots_from_prompt(
             self,
             prompt: str
-    ) -> list[str]:
-        """Extract numeric candidates from the source prompt"""
+    ) -> list[list[str]]:
+        """Extract numeric slots from the prompt with theis allowed variants"""
         import re
 
         raw_numbers = re.findall(r"-?\d+(?:\.\d+)?", prompt)
-        candidates: list[str] = []
+        slots: list[list[str]] = []
 
         for raw_number in raw_numbers:
-            if raw_number not in candidates:
-                candidates.append(raw_number)
-
+            variants = [raw_number]
             if "." not in raw_number:
                 float_variant = f"{raw_number}.0"
-                if float_variant not in candidates:
-                    candidates.append(float_variant)
+                if float_variant not in variants:
+                    variants.append(float_variant)
+            slots.append(variants)
 
-        return candidates
+        return slots
 
-    def _get_number_value_options(self, prompt: str) -> list[list[int]]:
-        """Build tokenized numeric value options from the prompt"""
-        candidates = self._extract_number_candidates_from_prompt(prompt)
-        return [self._llm_client.encode(candidate) for candidate in candidates]
+    def _get_current_number_slot_candidates(
+            self,
+            state: ConstraintState
+    ) -> list[str]:
+        """Return the candidate variants for the next numeric slot"""
+        slots = self._extract_number_slots_from_prompt(state.source_prompt)
+
+        if state.consumed_number_slots >= len(slots):
+            return []
+
+        return slots[state.consumed_number_slots]
 
     def _reset_current_key_state(self, state: ConstraintState) -> None:
         """Reset the current argument-key buffer state"""
@@ -316,9 +324,11 @@ class ConstraintEngine:
                     error=None
                 )
 
-            value_options = self._get_number_value_options(
-                state.source_prompt
-            )
+            value_candidates = self._get_current_number_slot_candidates(state)
+            value_options = [
+                self._llm_client.encode(candidate)
+                for candidate in value_candidates
+            ]
             if not value_options:
                 return ConstraintDecision(
                     phase=ConstraintPhase.ERROR,
@@ -502,13 +512,16 @@ class ConstraintEngine:
             new_state.current_value_text = new_value_text
 
             if new_state.current_parameter_type == "number":
-                value_options = self._get_number_value_options(
-                    new_state.source_prompt
-                )
+                value_candidates = self._get_current_number_slot_candidates(state)
+                value_options = [
+                    self._llm_client.encode(candidate)
+                    for candidate in value_candidates
+                ]
                 if any(
                         new_value_token_ids == option
                         for option in value_options
                 ):
+                    new_state.consumed_number_slots += 1
                     if new_state.current_parameter_name is not None:
                         new_state.emitted_parameter_names = [
                             *new_state.emitted_parameter_names,
