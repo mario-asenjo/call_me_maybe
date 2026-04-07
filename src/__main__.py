@@ -70,11 +70,13 @@ def main() -> int:
         generation_engine = GenerationEngine(function_definitions, llm_client)
 
         print("\n" + "=" * 15 + " INFO - REAL GENERATION TEST " + "=" * 15)
-        generated_core = generation_engine.generate_function_call_core(
-            prompt_items[0].prompt
-        )
-        print(f"Prompt: {prompt_items[0].prompt}")
-        print(f"Generated core: {generated_core.model_dump()}")
+        for prompt_item in prompt_items:
+            generated_core = generation_engine.generate_function_call_core(
+                prompt_item.prompt
+            )
+            print(f"Prompt: {prompt_item.prompt}")
+            print(f"Generated core: {generated_core.model_dump()}")
+            print("-" * 78 + "\n")
 
         return 0
     except ProjectError as exc:
