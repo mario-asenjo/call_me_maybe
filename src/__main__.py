@@ -16,6 +16,7 @@ from src.config import (
     DEFAULT_OUTPUT_FILE,
     DEFAULT_PROMPT_TESTS
 )
+from src.utils import measure_time
 
 
 def build_argument_parser() -> ArgumentParser:
@@ -70,13 +71,14 @@ def main() -> int:
         generation_engine = GenerationEngine(function_definitions, llm_client)
 
         print("\n" + "=" * 15 + " INFO - REAL GENERATION TEST " + "=" * 15)
-        for prompt_item in prompt_items:
-            generated_core = generation_engine.generate_function_call_core(
-                prompt_item.prompt
-            )
-            print(f"Prompt: {prompt_item.prompt}")
-            print(f"Generated core: {generated_core.model_dump()}")
-            print("-" * 78 + "\n")
+        with measure_time("full_generation_batch"):
+            for prompt_item in prompt_items:
+                generated_core = generation_engine.generate_function_call_core(
+                    prompt_item.prompt
+                )
+                print(f"Prompt: {prompt_item.prompt}")
+                print(f"Generated core: {generated_core.model_dump()}")
+                print("-" * 78 + "\n")
 
         return 0
     except ProjectError as exc:
@@ -84,6 +86,7 @@ def main() -> int:
         return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
+        print(f"Error Info: {exc.__traceback__.tb_next.tb_frame}", file=sys.stderr)
         return 1
 
 

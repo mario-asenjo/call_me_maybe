@@ -13,7 +13,7 @@ from pydantic import (
 )
 
 
-SupportedParameterTypes = Literal["string", "number", "boolean"]
+SupportedParameterTypes = Literal["string", "number", "boolean", "integer"]
 
 
 class FunctionParameterSpec(BaseModel):

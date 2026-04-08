@@ -1,5 +1,9 @@
 """State model for constrained JSON generation"""
+from functools import lru_cache
+
 from pydantic import BaseModel, ConfigDict, Field
+from sympy.polys.polyroots import preprocess_roots
+from torch.distributed import group
 
 from src import GenerationErrorInfo
 from src.domain import (
@@ -35,7 +39,7 @@ class ConstraintState(BaseModel):
     current_key_token_ids: list[int] = Field(default_factory=list)
 
     consumed_number_slots: int = 0
-    consumed_string_slots: int = 0
+    used_string_candidates: list[str] = Field(default_factory=list)
 
 
 class ConstraintEngine:
@@ -63,6 +67,17 @@ class ConstraintEngine:
             for function_name, header_text
             in self._function_header_texts.items()
         }
+
+        self._comma_token_id = self._llm_client.encode(",")[0]
+        self._closing_brace_token_id = self._llm_client.encode("}")[0]
+
+        self._arg_key_token_ids: dict[str, list[int]] = {}
+        for function_definition in function_definitions:
+            for parameter_name in function_definition.parameters.keys():
+                if parameter_name not in self._arg_key_token_ids:
+                    self._arg_key_token_ids[parameter_name] = self._llm_client.encode(
+                        self._build_next_arg_key_text(parameter_name)
+                    )
 
     def initial_state(self, source_prompt: str = "") -> ConstraintState:
         """
@@ -120,12 +135,13 @@ class ConstraintEngine:
 
     def _get_comma_token_id(self) -> int:
         """Return the token ID used for a JSON comma"""
-        return self._llm_client.encode(",")[0]
+        return self._comma_token_id
 
     def _get_closing_brace_token_id(self) -> int:
         """Return the token ID used for a closing JSON brace"""
-        return self._llm_client.encode("}")[0]
+        return self._closing_brace_token_id
 
+    @lru_cache(maxsize=256)
     def _extract_number_slots_from_prompt(
             self,
             prompt: str
@@ -162,6 +178,7 @@ class ConstraintEngine:
         """Normalize a candidate span extracted from the prompt"""
         return text.strip().strip(",.;:!?").strip()
 
+    @lru_cache(maxsize=256)
     def _extract_quoted_string_candidates(
             self,
             prompt: str
@@ -180,6 +197,18 @@ class ConstraintEngine:
 
         return candidates
 
+    @lru_cache(maxsize=256)
+    def _remove_quoted_segments(self, prompt: str) -> str:
+        """Remove quoted segments from a prompt before extracting unquoted spans"""
+        import re
+
+        return re.sub(
+            r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'',
+            " ",
+            prompt
+        )
+
+    @lru_cache(maxsize=256)
     def _extract_unquoted_string_candidates(
             self,
             prompt: str,
@@ -188,7 +217,8 @@ class ConstraintEngine:
         """Extract generic unquoted candidate spans from the prompt"""
         import re
 
-        token_matches = re.findall(r"[A-Za-z0-9_'\-]+", prompt)
+        prompt_without_quotes = self._remove_quoted_segments(prompt)
+        token_matches = re.findall(r"[A-Za-z0-9_'\-]+", prompt_without_quotes)
         candidates: list[str] = []
 
         for start_index in range(len(token_matches)):
@@ -205,6 +235,60 @@ class ConstraintEngine:
 
         return candidates
 
+    @lru_cache(maxsize=256)
+    def _extract_replacement_hint_candidates(
+            self,
+            prompt: str
+    ) -> list[str]:
+        """Extract likely replacement literals from prompt phrasing"""
+        import re
+
+        candidates: list[str] = []
+        normalized = prompt.strip()
+
+        match = re.search(r"\bwith\s+([A-Za-z0-9_*+-]+)\s*$", normalized, re.IGNORECASE)
+        if match:
+            candidates.append(self._normalize_prompt_span(match.group(1)))
+
+        match = re.search(r"\bwith\s+([A-Za-z0-9_*+-]+)\b", normalized, re.IGNORECASE)
+        if match:
+            candidates.append(self._normalize_prompt_span(match.group(1)))
+
+        lower_prompt = normalized.lower()
+        if "asterisk" in lower_prompt or "asterisks" in lower_prompt:
+            candidates.append("*")
+
+        return [candidate for candidate in candidates if candidate]
+
+    @lru_cache(maxsize=256)
+    def _extract_regex_like_candidates(
+            self,
+            prompt: str
+    ) -> list[str]:
+        """Extract regex-like candidates from transformation prompts"""
+        import re
+
+        candidates: list[str] = []
+        lower_prompt = prompt.lower()
+
+        if "replace all numbers" in lower_prompt or "replace all digits" in lower_prompt:
+            candidates.append(r"\d+")
+
+        if "replace all vowels" in lower_prompt:
+            candidates.append(r"[aeiouAEIOU]")
+
+        word_match = re.search(
+            r"\bword\s+[\"']([^\"']+)[\"']",
+            prompt,
+            re.IGNORECASE
+        )
+        if word_match:
+            escaped = re.escape(word_match.group(1))
+            candidates.append(rf"\b{escaped}\b")
+
+        return candidates
+
+    @lru_cache(maxsize=256)
     def _build_string_candidate_bank(
             self,
             prompt: str
@@ -212,9 +296,19 @@ class ConstraintEngine:
         """Build a generic ordered bank of string candidates from the prompt"""
         import json
 
-        raw_candidates: list[str] = []
-        raw_candidates.extend(self._extract_quoted_string_candidates(prompt))
-        raw_candidates.extend(self._extract_unquoted_string_candidates(prompt))
+        quoted_candidates = self._extract_quoted_string_candidates(prompt)
+        regex_like_candidates = self._extract_regex_like_candidates(prompt)
+        replacement_hint_candidates = self._extract_replacement_hint_candidates(prompt)
+
+        raw_candidates = []
+        raw_candidates.extend(
+            sorted(quoted_candidates, key=len, reverse=True)
+        )
+        raw_candidates.extend(regex_like_candidates)
+        raw_candidates.extend(replacement_hint_candidates)
+
+        if not quoted_candidates:
+            raw_candidates.extend(self._extract_unquoted_string_candidates(prompt))
 
         seen: set[str] = set()
         ordered_json_candidates: list[str] = []
@@ -233,11 +327,22 @@ class ConstraintEngine:
             self,
             state: ConstraintState
     ) -> list[str]:
-        """Return current candidate string literals for the active parameter"""
+        """Return string candidates that have not been used yet"""
         all_candidates = self._build_string_candidate_bank(state.source_prompt)
 
-        remaining_candidates = all_candidates[state.consumed_string_slots:]
-        return remaining_candidates
+        used_counts: dict[str, int] = {}
+        for candidate in state.used_string_candidates:
+            used_counts[candidate] = used_counts.get(candidate, 0) + 1
+
+        remaining: list[str] = []
+        for candidate in all_candidates:
+            count = used_counts.get(candidate, 0)
+            if count > 0:
+                used_counts[candidate] = count - 1
+                continue
+            remaining.append(candidate)
+
+        return remaining
 
     def _reset_current_key_state(self, state: ConstraintState) -> None:
         """Reset the current argument-key buffer state"""
@@ -273,6 +378,17 @@ class ConstraintEngine:
                 return state
 
         return state
+
+    def get_current_value_candidates(
+            self,
+            state: ConstraintState
+    ) -> list[str]:
+        """Return current value candidates for the active parameter"""
+        if state.current_parameter_type in {"number", "integer"}:
+            return self._get_current_number_slot_candidates(state)
+        if state.current_parameter_type == "string":
+            return self._get_current_string_slot_candidates(state)
+        return []
 
     def compute_valid_tokens(
             self,
@@ -338,9 +454,7 @@ class ConstraintEngine:
                 )
 
             next_parameter_name = state.pending_parameter_names[0]
-            option_token_ids = self._llm_client.encode(
-                self._build_next_arg_key_text(next_parameter_name)
-            )
+            option_token_ids = self._arg_key_token_ids[next_parameter_name]
 
             relative_prefix = state.current_key_token_ids
 
@@ -397,7 +511,7 @@ class ConstraintEngine:
             )
 
         if state.phase == ConstraintPhase.EXPECT_ARG_VALUE:
-            if state.current_parameter_type == "number":
+            if state.current_parameter_type in {"number", "integer"}:
                 value_candidates = self._get_current_number_slot_candidates(state)
             elif state.current_parameter_type == "string":
                 value_candidates = self._get_current_string_slot_candidates(state)
@@ -452,7 +566,7 @@ class ConstraintEngine:
                     note=None,
                     error=GenerationErrorInfo(
                         phase=state.phase,
-                        message="No numeric value option matches the current"
+                        message="No valid value option matches the current"
                                 " value prefix.",
                         partial_text=state.partial_output_text,
                         partial_token_ids=state.partial_output_token_ids
@@ -602,7 +716,7 @@ class ConstraintEngine:
             new_state.current_value_token_ids = new_value_token_ids
             new_state.current_value_text = new_value_text
 
-            if new_state.current_parameter_type == "number":
+            if new_state.current_parameter_type in {"number", "integer"}:
                 value_candidates = self._get_current_number_slot_candidates(new_state)
             elif new_state.current_parameter_type == "string":
                 value_candidates = self._get_current_string_slot_candidates(new_state)
@@ -616,10 +730,13 @@ class ConstraintEngine:
                     new_value_token_ids == option
                     for option in value_options
             ):
-                if new_state.current_parameter_type == "number":
+                if new_state.current_parameter_type in {"number", "integer"}:
                     new_state.consumed_number_slots += 1
                 elif new_state.current_parameter_type == "string":
-                    new_state.consumed_string_slots += 1
+                    new_state.used_string_candidates = [
+                        *new_state.used_string_candidates,
+                        new_state.current_value_text
+                    ]
 
                 if new_state.current_parameter_name is not None:
                     new_state.emitted_parameter_names = [
