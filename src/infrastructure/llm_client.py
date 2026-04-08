@@ -4,6 +4,7 @@ Minimal adapter for real SDK.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from llm_sdk import Small_LLM_Model
@@ -20,9 +21,10 @@ class LlmClient:
         """
         self._model = Small_LLM_Model(model_name=model_name)
 
-    def encode(self, text: str) -> list[int]:
+    @lru_cache(maxsize=8192)
+    def _encode_cached(self, text: str) -> tuple[int, ...]:
         """
-        Encode text into token IDs
+        Encode text into token IDs and cache the result
         :param text: Input text
         :return: A list of token IDs
         """
@@ -34,17 +36,28 @@ class LlmClient:
                     and nested
                     and isinstance(nested[0], list)
             ):
-                return [int(token_id) for token_id in nested[0]]
-            return [int(token_id) for token_id in nested]
+                return tuple(int(token_id) for token_id in nested[0])
+            if isinstance(nested, list):
+                return tuple(int(token_id) for token_id in nested)
+
         raise TypeError("Unexpected encode() return type from llm_sdk")
 
-    def decode(self, token_ids: list[int]) -> str:
+    @lru_cache(maxsize=8192)
+    def _decode_cached(self, token_ids: tuple[int, ...]) -> str:
         """
-        Decode token IDs into text
+        Decode token IDs into text and cache the result
         :param token_ids: Token IDs to decode
         :return: Decoded text
         """
-        return self._model.decode(token_ids)
+        return self._model.decode(list(token_ids))
+
+    def encode(self, text: str) -> list[int]:
+        """Encode text into token IDs"""
+        return list(self._encode_cached(text))
+
+    def decode(self, token_ids: list[int]) -> str:
+        """Decode token IDS into text"""
+        return self._decode_cached(tuple(token_ids))
 
     def get_next_token_logits(self, input_ids: list[int]) -> list[float]:
         """
