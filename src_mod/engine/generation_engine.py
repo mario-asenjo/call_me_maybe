@@ -6,12 +6,7 @@ import json
 from functools import lru_cache
 
 from src.config import DEFAULT_MAX_NEW_TOKENS
-from src.domain import (
-    ConstraintPhase,
-    FunctionCallCore,
-    FunctionDefinition,
-    GenerationFailureError,
-)
+from src.domain import ConstraintPhase, FunctionCallCore, FunctionDefinition, GenerationFailureError
 from src.engine.constraint_engine import ConstraintEngine, ConstraintState
 from src.infrastructure import LlmClient
 
@@ -26,10 +21,7 @@ class GenerationEngine:
     ) -> None:
         self._function_definitions = function_definitions
         self._llm_client = llm_client
-        self._constraint_engine = ConstraintEngine(
-            function_definitions,
-            llm_client,
-        )
+        self._constraint_engine = ConstraintEngine(function_definitions, llm_client)
         self._function_catalog = self._build_function_catalog()
 
     def generate_function_call_core(
@@ -37,7 +29,7 @@ class GenerationEngine:
         prompt: str,
         max_steps: int = DEFAULT_MAX_NEW_TOKENS,
     ) -> FunctionCallCore:
-        """Generate one constrained function-call core from a prompt."""
+        """Generate one constrained function-call core from a natural-language prompt."""
         state = self._constraint_engine.initial_state(prompt)
 
         for _ in range(max_steps):
@@ -51,29 +43,18 @@ class GenerationEngine:
                     f"phase={state.phase.value} | prompt={prompt!r} | "
                     f"partial_output={state.partial_output_text!r}"
                 )
-
             if not decision.valid_token_ids:
                 raise GenerationFailureError(
-                    "No valid next tokens available before reaching DONE | "
+                    f"No valid next tokens available before reaching DONE | "
                     f"phase={state.phase.value} | prompt={prompt!r} | "
                     f"partial_output={state.partial_output_text!r}"
                 )
 
-            candidate_values = tuple(
-                self._constraint_engine.get_current_value_candidates(state)[:8]
-            )
+            candidate_values = tuple(self._constraint_engine.get_current_value_candidates(state)[:24])
             completed_arguments = tuple(
-                (
-                    name,
-                    json.dumps(
-                        value,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    ),
-                )
+                (name, json.dumps(value, ensure_ascii=False, sort_keys=True))
                 for name, value in state.completed_arguments.items()
             )
-
             context_token_ids = list(
                 self._get_context_token_ids(
                     prompt=prompt,
@@ -84,25 +65,13 @@ class GenerationEngine:
                     candidate_values=candidate_values,
                 )
             )
-
-            model_input_token_ids = (
-                context_token_ids + state.partial_output_token_ids
-            )
-            logits = self._llm_client.get_next_token_logits(
-                model_input_token_ids
-            )
-            chosen_token_id = max(
-                decision.valid_token_ids,
-                key=lambda token_id: logits[token_id],
-            )
-            state = self._constraint_engine.advance_state_with_token(
-                state,
-                chosen_token_id,
-            )
+            model_input_token_ids = context_token_ids + state.partial_output_token_ids
+            logits = self._llm_client.get_next_token_logits(model_input_token_ids)
+            chosen_token_id = max(decision.valid_token_ids, key=lambda token_id: logits[token_id])
+            state = self._constraint_engine.advance_state_with_token(state, chosen_token_id)
 
         raise GenerationFailureError(
-            "Generation exceeded the maximum number of steps "
-            f"({max_steps}) for prompt {prompt!r}"
+            f"Generation exceeded the maximum number of steps ({max_steps}) for prompt {prompt!r}"
         )
 
     @lru_cache(maxsize=4096)
@@ -128,28 +97,16 @@ class GenerationEngine:
         ]
 
         if selected_function_name is not None:
-            context_lines.append(
-                f"Selected function: {selected_function_name}"
-            )
-
+            context_lines.append(f"Selected function: {selected_function_name}")
         if completed_arguments:
-            compact_arguments = ", ".join(
-                f"{name}={serialized_value}"
-                for name, serialized_value in completed_arguments
-            )
-            context_lines.append(f"Arguments already fixed: {compact_arguments}")
-
-        if (
-            current_parameter_name is not None
-            and current_parameter_type is not None
-        ):
-            context_lines.append(
-                f"Current argument: {current_parameter_name} "
-                f"({current_parameter_type})"
-            )
-
+            context_lines.append("Arguments already fixed:")
+            for argument_name, serialized_value in completed_arguments:
+                context_lines.append(f"- {argument_name} = {serialized_value}")
+        if current_parameter_name is not None and current_parameter_type is not None:
+            context_lines.append(f"Current argument name: {current_parameter_name}")
+            context_lines.append(f"Current argument type: {current_parameter_type}")
         if candidate_values:
-            context_lines.append("Valid literals:")
+            context_lines.append("Valid candidate literals for the current argument:")
             for candidate_value in candidate_values:
                 context_lines.append(f"- {candidate_value}")
 
@@ -157,22 +114,17 @@ class GenerationEngine:
         return tuple(self._llm_client.encode(context_text))
 
     def _build_function_catalog(self) -> str:
-        """Build the static function catalog included in every context."""
+        """Build the static function catalog included in every model context."""
         function_lines: list[str] = []
-
         for function_definition in self._function_definitions:
             parameters_text = ", ".join(
                 f"{parameter_name}: {parameter_spec.type}"
-                for parameter_name, parameter_spec
-                in function_definition.parameters.items()
+                for parameter_name, parameter_spec in function_definition.parameters.items()
             )
             function_lines.append(
-                f"- {function_definition.name}: "
-                f"{function_definition.description} | "
-                f"params=({parameters_text}) | "
-                f"returns={function_definition.returns.type}"
+                f"- {function_definition.name}: {function_definition.description} | "
+                f"params=({parameters_text}) | returns={function_definition.returns.type}"
             )
-
         return "\n".join(function_lines)
 
     def _parse_final_core(self, state: ConstraintState) -> FunctionCallCore:
@@ -181,14 +133,12 @@ class GenerationEngine:
             parsed = json.loads(state.partial_output_text)
         except json.JSONDecodeError as exc:
             raise GenerationFailureError(
-                "Generated output is not valid JSON: "
-                f"{state.partial_output_text!r}"
+                f"Generated output is not valid JSON: {state.partial_output_text!r}"
             ) from exc
 
         try:
             return FunctionCallCore.model_validate(parsed)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover - defensive wrapper
             raise GenerationFailureError(
-                "Generated JSON does not match FunctionCallCore: "
-                f"{parsed!r}"
+                f"Generated JSON does not match FunctionCallCore: {parsed!r}"
             ) from exc

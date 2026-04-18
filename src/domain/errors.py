@@ -19,3 +19,15 @@ class InputJsonError(ProjectError):
 
 class InputValidationError(ProjectError):
     """Raised when parsed input data does not match the spected schema"""
+
+
+class GenerationFailureError(ProjectError):
+    """Raised when constrained generation cannot produce a valid call"""
+
+
+class OutputValidationError(ProjectError):
+    """Raised when a generated call does not match the function schema"""
+
+
+class OutputFileError(ProjectError):
+    """Raised when the output file cannot be written"""

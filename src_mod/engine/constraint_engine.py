@@ -83,11 +83,6 @@ class ConstraintEngine:
         """Return the function definition associated with one function name."""
         return self._function_map[function_name]
 
-    @lru_cache(maxsize=8192)
-    def _encode_literal(self, literal: str) -> tuple[int, ...]:
-        """Encode one literal once and reuse its token IDs."""
-        return tuple(self._llm_client.encode(literal))
-
     def get_current_value_candidates(self, state: ConstraintState) -> list[str]:
         """Return active candidate JSON literals for the current parameter."""
         if state.selected_function_name is None:
@@ -260,8 +255,7 @@ class ConstraintEngine:
             note="Restricting generation to the next argument key.",
         )
 
-    def _compute_value_tokens(self,
-                              state: ConstraintState) -> ConstraintDecision:
+    def _compute_value_tokens(self, state: ConstraintState) -> ConstraintDecision:
         """Restrict generation to continuations of valid value candidates."""
         candidates = self.get_current_value_candidates(state)
         if not candidates:
@@ -271,8 +265,7 @@ class ConstraintEngine:
                 error=GenerationErrorInfo(
                     phase=state.phase,
                     message=(
-                        "No value candidates are available for the current "
-                        "parameter. "
+                        "No value candidates are available for the current parameter. "
                         f"selected_function={state.selected_function_name!r}, "
                         f"current_parameter={state.current_parameter_name!r}, "
                         f"current_type={state.current_parameter_type!r}, "
@@ -284,14 +277,12 @@ class ConstraintEngine:
             )
 
         current_prefix = state.current_value_token_ids
-        matching_value_options: list[tuple[int, ...]] = []
-
+        matching_value_options: list[list[int]] = []
         for candidate in candidates:
-            option_token_ids = self._encode_literal(candidate)
+            option_token_ids = self._llm_client.encode(candidate)
             if len(current_prefix) > len(option_token_ids):
                 continue
-            if tuple(current_prefix) == option_token_ids[
-                : len(current_prefix)]:
+            if option_token_ids[: len(current_prefix)] == current_prefix:
                 matching_value_options.append(option_token_ids)
 
         if not matching_value_options:
@@ -300,9 +291,7 @@ class ConstraintEngine:
                 valid_token_ids=[],
                 error=GenerationErrorInfo(
                     phase=state.phase,
-                    message=(
-                        "No valid value candidate matches the current value prefix."
-                    ),
+                    message="No valid value candidate matches the current value prefix.",
                     partial_text=state.partial_output_text,
                     partial_token_ids=state.partial_output_token_ids,
                 ),
@@ -355,56 +344,32 @@ class ConstraintEngine:
             state.phase = ConstraintPhase.EXPECT_ARG_VALUE
         return state
 
-    def _advance_value_state(
-            self,
-            state: ConstraintState,
-            token_id: int,
-    ) -> ConstraintState:
+    def _advance_value_state(self, state: ConstraintState, token_id: int) -> ConstraintState:
         """Advance the state while building the current argument value."""
-        state.current_value_token_ids = [*state.current_value_token_ids,
-                                         token_id]
-        state.current_value_text = self._llm_client.decode(
-            state.current_value_token_ids
-        )
+        state.current_value_token_ids = [*state.current_value_token_ids, token_id]
+        state.current_value_text = self._llm_client.decode(state.current_value_token_ids)
 
         candidate_token_ids = [
-            self._encode_literal(candidate)
+            self._llm_client.encode(candidate)
             for candidate in self.get_current_value_candidates(state)
         ]
-
-        if any(
-                tuple(state.current_value_token_ids) == candidate_ids
-                for candidate_ids in candidate_token_ids
-        ):
-            if (
-                    state.current_parameter_name is None
-                    or state.current_parameter_type is None
-            ):
+        if any(state.current_value_token_ids == candidate_ids for candidate_ids in candidate_token_ids):
+            if state.current_parameter_name is None or state.current_parameter_type is None:
                 return state
 
             parsed_value = json.loads(state.current_value_text)
-            state.completed_arguments[
-                state.current_parameter_name] = parsed_value
-            state.emitted_parameter_names = [
-                *state.emitted_parameter_names,
-                state.current_parameter_name,
-            ]
+            state.completed_arguments[state.current_parameter_name] = parsed_value
+            state.emitted_parameter_names = [*state.emitted_parameter_names, state.current_parameter_name]
             state.pending_parameter_names = [
-                name
-                for name in state.pending_parameter_names
-                if name != state.current_parameter_name
+                name for name in state.pending_parameter_names if name != state.current_parameter_name
             ]
 
             if state.current_parameter_type in {"number", "integer"}:
                 state.consumed_numeric_slots += 1
             elif state.current_parameter_type == "string":
-                state.used_string_literals = [
-                    *state.used_string_literals,
-                    state.current_value_text,
-                ]
+                state.used_string_literals = [*state.used_string_literals, state.current_value_text]
 
             state.phase = ConstraintPhase.EXPECT_ARG_SEPARATOR_OR_END
-
         return state
 
     def _advance_separator_state(self, state: ConstraintState, token_id: int) -> ConstraintState:
